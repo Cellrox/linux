@@ -55,7 +55,7 @@ static DECLARE_RWSEM(global_dev_ns_lock);
 struct dev_namespace init_dev_ns = {
 	.active = true,
 	.count = ATOMIC_INIT(2),  /* extra reference for active_dev_ns */
-	.pid_ns = &init_pid_ns,
+	.init_pid = 1,
 	.notifiers = BLOCKING_NOTIFIER_INIT(init_dev_ns.notifiers),
 	.timestamp = 0,
 	.mutex = __MUTEX_INITIALIZER(init_dev_ns.mutex),
@@ -76,7 +76,7 @@ static void dev_ns_unlock(struct dev_namespace *dev_ns)
 	mutex_unlock(&dev_ns->mutex);
 }
 
-static struct dev_namespace *create_dev_ns(struct task_struct *task)
+static struct dev_namespace *create_dev_ns(void)
 {
 	struct dev_namespace *dev_ns;
 
@@ -88,7 +88,11 @@ static struct dev_namespace *create_dev_ns(struct task_struct *task)
 	BLOCKING_INIT_NOTIFIER_HEAD(&dev_ns->notifiers);
 	mutex_init(&dev_ns->mutex);
 
-	dev_ns->pid_ns = get_pid_ns(task->nsproxy->pid_ns);
+	/*
+	 * The pid is yet unknown, so init_pid will remain zero until
+	 * a dev_ns is accessed for the first time by get_dev_ns_by_xxx()
+	 * or new_dev_ns_info() functions.
+	 */
 
 	return dev_ns;
 }
@@ -105,15 +109,31 @@ struct dev_namespace *copy_dev_ns(unsigned long flags,
 	if (!(flags & CLONE_NEWPID))
 		return get_dev_ns(dev_ns);
 	else
-		return create_dev_ns(task);
+		return create_dev_ns();
+}
+
+static void lazy_set_dev_ns_init_pid(struct nsproxy *nsproxy)
+{
+	/*
+	 * dev_ns->init_pid is set here, lazily, because it was
+	 * not known at creation time in copy_dev_ns() - see above.
+	 */
+	if (unlikely(nsproxy->dev_ns->init_pid == 0))
+		nsproxy->dev_ns->init_pid = nsproxy->pid_ns->child_reaper->pid;
 }
 
 void __put_dev_ns(struct dev_namespace *dev_ns)
 {
-	if (dev_ns) {
-		put_pid_ns(dev_ns->pid_ns);
-		kfree(dev_ns);
-	}
+	kfree(dev_ns);
+}
+
+static struct dev_namespace *get_dev_ns_from_nsproxy(struct nsproxy *nsproxy)
+{
+	if (nsproxy) {
+		lazy_set_dev_ns_init_pid(nsproxy);
+		return get_dev_ns(nsproxy->dev_ns);
+	} else
+		return NULL;
 }
 
 struct dev_namespace *get_dev_ns_by_task(struct task_struct *task)
@@ -123,8 +143,7 @@ struct dev_namespace *get_dev_ns_by_task(struct task_struct *task)
 
 	rcu_read_lock();
 	nsproxy = task_nsproxy(task);
-	if (nsproxy)
-		dev_ns = get_dev_ns(nsproxy->dev_ns);
+	dev_ns = get_dev_ns_from_nsproxy(nsproxy);
 	rcu_read_unlock();
 
 	return dev_ns;
@@ -140,8 +159,7 @@ struct dev_namespace *get_dev_ns_by_vpid(pid_t vpid)
 	task = find_task_by_pid_ns(vpid, &init_pid_ns);
 	if (task) {
 		nsproxy = task_nsproxy(task);
-		if (nsproxy)
-			dev_ns = get_dev_ns(nsproxy->dev_ns);
+		dev_ns = get_dev_ns_from_nsproxy(nsproxy);
 	}
 	rcu_read_unlock();
 
@@ -249,6 +267,8 @@ static struct dev_ns_info *new_dev_ns_info(int dev_ns_id,
 	struct dev_ns_info *dev_ns_info;
 
 	pr_debug("dev_ns: [0x%p] new info %s\n", dev_ns, desc->name);
+
+	lazy_set_dev_ns_init_pid(current->nsproxy);
 
 	dev_ns_info = desc->ops->create(dev_ns);
 	if (!dev_ns_info)

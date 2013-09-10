@@ -104,8 +104,6 @@ static struct nsproxy *create_new_namespaces(unsigned long flags,
 		goto out_dev;
 	}
 
-	new_nsp->dev_ns->pid_ns = new_nsp->pid_ns;
-
 	return new_nsp;
 
 out_dev:

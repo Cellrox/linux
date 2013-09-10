@@ -36,7 +36,7 @@ struct dev_namespace {
 
 	bool active;
 	atomic_t count;
-	struct pid_namespace *pid_ns;
+	pid_t init_pid;
 	char tag[DEV_NS_TAG_LEN + 1];
 	struct blocking_notifier_head notifiers;
 	unsigned long timestamp; /* jiffies */
@@ -109,7 +109,7 @@ extern void get_dev_ns_tag(char *to, struct dev_namespace *dev);
 /* return root pid of the init process in a device namespace */
 static inline pid_t dev_ns_init_pid(struct dev_namespace *dev_ns)
 {
-	return dev_ns->pid_ns->child_reaper->pid;
+	return dev_ns->init_pid;
 }
 
 /* device namespaces: notifiers (de)registration */
