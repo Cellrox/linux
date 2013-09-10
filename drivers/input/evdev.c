@@ -144,8 +144,7 @@ static struct dev_ns_info *evdev_devns_create(struct dev_namespace *dev_ns)
 	dev_ns_info->nb = evdev_ns_switch_notifier;
 	dev_ns_register_notify(dev_ns, &dev_ns_info->nb);
 
-	return &evdev_ns->dev_ns_info;
-
+	return dev_ns_info;
 }
 
 static void evdev_devns_release(struct dev_ns_info *dev_ns_info)
@@ -202,7 +201,7 @@ static void evdev_ns_untrack_client(struct evdev_client *client)
 	put_evdev_ns(evdev_ns);
 }
 
-/* dev_ns and resepctive fb_dev_ns protected by caller */
+/* dev_ns and respective fb_dev_ns protected by caller */
 static int evdev_ns_switch_callback(struct notifier_block *self,
 				    unsigned long action, void *data)
 {

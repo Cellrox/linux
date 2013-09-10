@@ -217,10 +217,11 @@ static inline void put_dev_ns(struct dev_namespace *dev_ns)
  * DEFINE_DEV_NS_INIT(X): put_X_ns(), get_X_ns(), get_X_ns_cur()
  */
 #define DEFINE_DEV_NS_INIT(x) \
-	struct x ## _dev_ns init_ ## x ## _ns; \
+	static struct x ## _dev_ns init_ ## x ## _ns; \
 	static inline \
 	struct x ## _dev_ns *find_ ## x ## _ns(struct dev_namespace *dev_ns) \
 	{ return &init_ ## x ## _ns; } \
+	static inline \
 	struct x ## _dev_ns *get_ ## x ## _ns(struct dev_namespace *dev_ns) \
 	{ return &init_ ## x ## _ns; } \
 	static inline struct x ## _dev_ns *get_ ## x ## _ns_cur(void) \

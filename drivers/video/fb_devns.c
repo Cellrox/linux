@@ -1116,7 +1116,7 @@ static int do_fb_activate_ns(struct fb_info *virt, bool activate)
 	return 0;
 }
 
-/* dev_ns and resepctive fb_dev_ns protected (by caller) */
+/* dev_ns and respective fb_dev_ns protected (by caller) */
 static int fb_activate_ns(struct dev_namespace *dev_ns, bool activate)
 {
 	struct fb_dev_ns *fb_ns;
@@ -1146,7 +1146,7 @@ static int fb_activate_ns(struct dev_namespace *dev_ns, bool activate)
 	return err;
 }
 
-/* dev_ns and resepctive fb_dev_ns protected by caller */
+/* dev_ns and respective fb_dev_ns protected by caller */
 static int fb_ns_switch_callback(struct notifier_block *self,
 				 unsigned long action, void *data)
 {
