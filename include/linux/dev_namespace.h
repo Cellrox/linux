@@ -203,6 +203,9 @@ extern void loop_dev_ns_info(int ns_id, void *ptr,
 /* appease static assignment in kernel/nsproxy.c */
 #define init_dev_ns (*(struct dev_namespace *) NULL)
 
+static inline void put_dev_ns(struct dev_namespace *dev_ns)
+{ /* nothing */ }
+
 /*
  * Driver authors should use this macro instead if !CONFIG_DEV_NS:
  * DEFINE_DEV_NS_INIT(X): put_X_ns(), get_X_ns(), get_X_ns_cur()
@@ -230,12 +233,17 @@ static inline struct dev_namespace *copy_dev_ns(unsigned long flags,
 	return task->nsproxy->dev_ns;
 }
 
+static inline bool is_active_dev_ns(struct dev_namespace *dev_ns)
+{
+	return true;
+}
+
 static inline pid_t dev_ns_init_pid(struct dev_namespace *dev_ns)
 {
 	return init_task.pid;
 }
 
-static inline get_dev_ns_tag(char *to, struct dev_namespace *dev_ns)
+static inline void get_dev_ns_tag(char *to, struct dev_namespace *dev_ns)
 {
 	strcpy(to, "");
 }
