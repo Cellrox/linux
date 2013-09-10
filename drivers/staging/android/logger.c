@@ -484,13 +484,9 @@ ssize_t logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 
 	now = current_kernel_time();
 
-	BUG_ON(!dev_ns);
-
 	header.ns_initpid = dev_ns_init_pid(dev_ns);
-	if (header.ns_initpid > 1)
-		strncpy(header.ns_tag, dev_ns->tag, DEV_NS_TAG_LEN);
-	else
-		header.ns_tag[0] = '\0';
+	get_dev_ns_tag(header.ns_tag, dev_ns);
+
 	header.ns_pid = task_tgid_nr(current);
 	header.ns_tid = task_pid_nr(current);
 	header.pid = task_tgid_vnr(current);
@@ -568,9 +564,7 @@ static int logger_open(struct inode *inode, struct file *file)
 		struct logger_reader *reader;
 		struct dev_namespace *dev_ns = current_dev_ns();
 
-		BUG_ON(!dev_ns);
-
-		if (file->f_flags & O_DIRECT && dev_ns != &init_dev_ns)
+		if (file->f_flags & O_DIRECT && !is_init_dev_ns(dev_ns))
 			return -EPERM;
 
 		reader = kmalloc(sizeof(struct logger_reader), GFP_KERNEL);
@@ -753,7 +747,7 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			ret = -EBADF;
 			break;
 		}
-		if (current_dev_ns() != &init_dev_ns) {
+		if (!is_init_dev_ns(current_dev_ns())) {
 			ret = -EPERM;
 			break;
 		}

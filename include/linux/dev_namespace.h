@@ -93,6 +93,12 @@ static inline bool is_active_dev_ns(struct dev_namespace *dev_ns)
 	return dev_ns->active;
 }
 
+/* return whether given device namespace is init dev_ns */
+static inline bool is_init_dev_ns(struct dev_namespace *dev_ns)
+{
+	return dev_ns == &init_dev_ns;
+}
+
 /* return and get the device namespace of a given task */
 extern struct dev_namespace *get_dev_ns_by_task(struct task_struct *task);
 extern struct dev_namespace *get_dev_ns_by_vpid(pid_t vpid);
@@ -223,7 +229,9 @@ static inline void put_dev_ns(struct dev_namespace *dev_ns)
 	{ /* */ }
 
 static inline struct dev_namespace *current_dev_ns(void)
-{ return &init_dev_ns; }
+{
+	return &init_dev_ns;
+}
 
 static inline struct dev_namespace *copy_dev_ns(unsigned long flags,
 						struct task_struct *task)
@@ -234,6 +242,11 @@ static inline struct dev_namespace *copy_dev_ns(unsigned long flags,
 }
 
 static inline bool is_active_dev_ns(struct dev_namespace *dev_ns)
+{
+	return true;
+}
+
+static inline bool is_init_dev_ns(struct dev_namespace *dev_ns)
 {
 	return true;
 }
