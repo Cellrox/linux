@@ -743,7 +743,7 @@ static int fb_ns_mmap(struct fb_info *virt, struct vm_area_struct *vma)
 
 	pr_info("fb_mmap fb_info 0x%p idx %d\n", virt, virt->node);
 	pr_info(" |-> addr 0x%p vm_start 0x%lx vm_size 0x%lx vm_pgoff 0x%lx\n",
-		vma->vm_start, vma->vm_end - vma->vm_start, vma->vm_pgoff);
+		addr, vma->vm_start, vma->vm_end-vma->vm_start, vma->vm_pgoff);
 
 	return remap_vmalloc_range(vma, addr, vma->vm_pgoff);
 }
