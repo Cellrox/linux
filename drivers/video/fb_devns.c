@@ -917,6 +917,10 @@ static void fb_ns_swap_vmem(struct fb_info *virt, int activate)
 	pr_info("fb_info 0x%p idx %d copy %s virtual buffer (size 0x%zx)\n",
 		info, info->node, activate ? "from" : "to", size);
 
+	/* do nothing for zero size framebuffers */
+	if (size == 0 || !info->screen_base || !virt->screen_base)
+		return;
+
 	/* follow logic in fb_read()/fb_write() */
 	if (info->fbops->fb_sync)
 		info->fbops->fb_sync(info);
