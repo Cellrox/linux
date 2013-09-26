@@ -850,6 +850,16 @@ config NET_NS
 	  Allow user space to create what appear to be multiple instances
 	  of the network stack.
 
+config DEV_NS
+	bool "Device Namespaces (EXPERIMENTAL)"
+	default n
+	depends on PID_NS
+	help
+	Support device driver namespaces. This allows drivers to multiplex
+	access to its physical or logical resources. A device namespace has
+	a one-to-one relationship with a PID namespace currentlly, but this
+	will likely change in the future.
+
 endif # NAMESPACES
 
 config SCHED_AUTOGROUP
