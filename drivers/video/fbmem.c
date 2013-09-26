@@ -32,6 +32,7 @@
 #include <linux/device.h>
 #include <linux/efi.h>
 #include <linux/fb.h>
+#include <linux/fb_devns.h>
 
 #include <asm/fb.h>
 
@@ -730,9 +731,22 @@ static struct fb_info *file_fb_info(struct file *file)
 	struct inode *inode = file->f_path.dentry->d_inode;
 	int fbidx = iminor(inode);
 	struct fb_info *info = registered_fb[fbidx];
+	struct fb_info *virt = file->private_data;
 
-	if (info != file->private_data)
-		info = NULL;
+	if (info != fb_virt_to_info(virt))
+		virt = NULL;
+	return virt;
+}
+
+static struct fb_info *file_fb_info_ns(struct file *file)
+{
+	struct fb_info *info;
+
+	info = file_fb_info(file);
+#ifdef CONFIG_FB_DEV_NS
+	if (info != NULL)
+		info = fb_virt_to_info_ns(info);
+#endif
 	return info;
 }
 
@@ -740,7 +754,7 @@ static ssize_t
 fb_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 {
 	unsigned long p = *ppos;
-	struct fb_info *info = file_fb_info(file);
+	struct fb_info *info = file_fb_info_ns(file);
 	u8 *buffer, *dst;
 	u8 __iomem *src;
 	int c, cnt = 0, err = 0;
@@ -805,7 +819,7 @@ static ssize_t
 fb_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 {
 	unsigned long p = *ppos;
-	struct fb_info *info = file_fb_info(file);
+	struct fb_info *info = file_fb_info_ns(file);
 	u8 *buffer, *src;
 	u8 __iomem *dst;
 	int c, cnt = 0, err = 0;
@@ -1078,6 +1092,12 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 	void __user *argp = (void __user *)arg;
 	long ret = 0;
 
+#ifdef CONFIG_FB_DEV_NS
+	/* operate on virtual fbinfo, if not in active namespace */
+	struct fb_info *virt = info;
+	info = fb_virt_to_info_ns(virt);
+#endif
+
 	switch (cmd) {
 	case FBIOGET_VSCREENINFO:
 		if (!lock_fb_info(info))
@@ -1192,12 +1212,19 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			ret = -ENOTTY;
 		unlock_fb_info(info);
 	}
+
+#ifdef CONFIG_FB_DEV_NS
+	if (ret < 0)
+		printk(KERN_ERR "fb_devns: IOCTL info 0x%p index %d ret %ld\n",
+		       info, info->node, ret);
+#endif
+
 	return ret;
 }
 
 static long fb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	struct fb_info *info = file_fb_info(file);
+	struct fb_info *info = file_fb_info_ns(file);
 
 	if (!info)
 		return -ENODEV;
@@ -1321,7 +1348,7 @@ static int fb_get_fscreeninfo(struct fb_info *info, unsigned int cmd,
 static long fb_compat_ioctl(struct file *file, unsigned int cmd,
 			    unsigned long arg)
 {
-	struct fb_info *info = file_fb_info(file);
+	struct fb_info *info = file_fb_info_ns(file);
 	struct fb_ops *fb;
 	long ret = -ENOIOCTLCMD;
 
@@ -1360,7 +1387,7 @@ static long fb_compat_ioctl(struct file *file, unsigned int cmd,
 static int
 fb_mmap(struct file *file, struct vm_area_struct * vma)
 {
-	struct fb_info *info = file_fb_info(file);
+	struct fb_info *info = file_fb_info_ns(file);
 	struct fb_ops *fb;
 	unsigned long off;
 	unsigned long start;
@@ -1418,8 +1445,13 @@ __releases(&info->lock)
 {
 	int fbidx = iminor(inode);
 	struct fb_info *info;
+	struct fb_info *virt;
 	int res = 0;
+#ifdef CONFIG_FB_DEV_NS
+	bool tracked = false;
+#endif
 
+	virt = NULL;
 	info = get_fb_info(fbidx);
 	if (!info) {
 		request_module("fb%d", fbidx);
@@ -1436,6 +1468,27 @@ __releases(&info->lock)
 		goto out;
 	}
 	file->private_data = info;
+
+#ifdef CONFIG_FB_DEV_NS
+	/* locate or dynamically allocate the per-namespace data */
+	virt = get_fb_info_ns(info);
+	if (virt == NULL) {
+		res = -ENOMEM;
+		module_put(info->fbops->owner);
+		goto out;
+	}
+
+	file->private_data = virt;  /* if dev_ns, use virtual */
+
+	/* track who uses this inode, if remapping is needed later */
+	res = track_fb_inode(virt, inode);
+	if (res) {
+		module_put(info->fbops->owner);
+		goto out;
+	}
+	tracked = true;
+#endif
+
 	if (info->fbops->fb_open) {
 		res = info->fbops->fb_open(info,1);
 		if (res)
@@ -1447,8 +1500,14 @@ __releases(&info->lock)
 #endif
 out:
 	mutex_unlock(&info->lock);
-	if (res)
+	if (res) {
+#ifdef CONFIG_FB_DEV_NS
+		if (tracked)
+			untrack_fb_inode(virt, inode);
+		put_fb_info_ns(virt);
+#endif
 		put_fb_info(info);
+	}
 	return res;
 }
 
@@ -1457,13 +1516,18 @@ fb_release(struct inode *inode, struct file *file)
 __acquires(&info->lock)
 __releases(&info->lock)
 {
-	struct fb_info * const info = file->private_data;
+	struct fb_info * const virt = file->private_data;
+	struct fb_info * const info = fb_virt_to_info(virt);
 
 	mutex_lock(&info->lock);
 	if (info->fbops->fb_release)
 		info->fbops->fb_release(info,1);
 	module_put(info->fbops->owner);
 	mutex_unlock(&info->lock);
+#ifdef CONFIG_FB_DEV_NS
+	untrack_fb_inode(virt, inode);
+	put_fb_info_ns(virt);
+#endif
 	put_fb_info(info);
 	return 0;
 }
