@@ -34,6 +34,7 @@
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
+#include <linux/ipc_namespace.h>
 #include <linux/slab.h>
 
 #include "binder.h"
@@ -49,6 +50,8 @@
  * global, including stats, logs, and dead nodes.
  */
 struct binder_namespace {
+	struct kref kref;
+
 	struct binder_node *context_mgr_node;
 	kuid_t context_mgr_uid;
 	int last_id;
@@ -62,25 +65,44 @@ static struct binder_namespace *create_binder_ns(void)
 
 	binder_ns = kzalloc(sizeof(struct binder_namespace), GFP_KERNEL);
 	if (binder_ns) {
+		kref_init(&binder_ns->kref);
 		binder_ns->context_mgr_uid = INVALID_UID;
 		INIT_HLIST_HEAD(&binder_ns->procs);
 	}
 	return binder_ns;
 }
 
-/* temporary: until we plug binder to to ipc namespace */
-static struct binder_namespace *init_binder_ns;
-
-static inline void binder_lock(const char *tag);
-static inline void binder_unlock(const char *tag);
-
-struct binder_namespace *current_binder_ns(void)
+static void free_binder_ns(struct kref *kref)
 {
-	binder_lock(__func__);
-	if (init_binder_ns == NULL)
-		init_binder_ns = create_binder_ns();
-	binder_unlock(__func__);
-	return init_binder_ns;
+	kfree(container_of(kref, struct binder_namespace, kref));
+}
+
+static void get_binder_ns(struct binder_namespace *binder_ns)
+{
+	kref_get(&binder_ns->kref);
+}
+
+static void put_binder_ns(struct binder_namespace *binder_ns)
+{
+	kref_put(&binder_ns->kref, free_binder_ns);
+}
+
+static struct binder_namespace *current_binder_ns(void)
+{
+	return current->nsproxy->ipc_ns->binder_ns;
+}
+
+/* callbacks from owning namespace */
+int binder_init_ns(struct ipc_namespace *ipcns)
+{
+	ipcns->binder_ns = create_binder_ns();
+	return ipcns->binder_ns ? 0 : -ENOMEM;
+}
+
+void binder_exit_ns(struct ipc_namespace *ipcns)
+{
+	if (ipcns->binder_ns)
+		put_binder_ns(ipcns->binder_ns);
 }
 
 static DEFINE_MUTEX(binder_main_lock);
@@ -2869,6 +2891,7 @@ static int binder_open(struct inode *nodp, struct file *filp)
 	proc->default_priority = task_nice(current);
 
 	proc->binder_ns = binder_ns;
+	get_binder_ns(binder_ns);
 
 	binder_lock(__func__);
 
@@ -3040,6 +3063,7 @@ static void binder_deferred_release(struct binder_proc *proc)
 		vfree(proc->buffer);
 	}
 
+	put_binder_ns(proc->binder_ns);
 	put_task_struct(proc->tsk);
 
 	binder_debug(BINDER_DEBUG_OPEN_CLOSE,

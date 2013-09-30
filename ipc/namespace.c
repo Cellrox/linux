@@ -27,8 +27,16 @@ static struct ipc_namespace *create_ipc_ns(struct task_struct *tsk,
 		return ERR_PTR(-ENOMEM);
 
 	atomic_set(&ns->count, 1);
+
+	err = binder_init_ns(ns);
+	if (err) {
+		kfree(ns);
+		return ERR_PTR(err);
+	}
+
 	err = mq_init_ns(ns);
 	if (err) {
+		binder_exit_ns(ns);
 		kfree(ns);
 		return ERR_PTR(err);
 	}
@@ -105,6 +113,7 @@ static void free_ipc_ns(struct ipc_namespace *ns)
 	sem_exit_ns(ns);
 	msg_exit_ns(ns);
 	shm_exit_ns(ns);
+	binder_exit_ns(ns);
 	atomic_dec(&nr_ipc_ns);
 
 	/*

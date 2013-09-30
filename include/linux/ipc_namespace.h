@@ -65,6 +65,9 @@ struct ipc_namespace {
 	unsigned int    mq_msg_default;
 	unsigned int    mq_msgsize_default;
 
+	/* binder context in this ns */
+	struct binder_namespace *binder_ns;
+
 	/* user_ns which owns the ipc ns */
 	struct user_namespace *user_ns;
 };
@@ -129,6 +132,14 @@ extern int mq_init_ns(struct ipc_namespace *ns);
 #define HARD_MSGSIZEMAX	    (16*1024*1024)
 #else
 static inline int mq_init_ns(struct ipc_namespace *ns) { return 0; }
+#endif
+
+#ifdef CONFIG_ANDROID_BINDER_IPC
+extern int binder_init_ns(struct ipc_namespace *ipcns);
+extern void binder_exit_ns(struct ipc_namespace *ipcns);
+#else
+static inline int binder_init_ns(struct ipc_namespace *ipcns) { return NULL; }
+static inline void binder_exit_ns(struct ipc_namespace *ipcns) { }
 #endif
 
 #if defined(CONFIG_IPC_NS)
